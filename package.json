@@ -1,8 +1,26 @@
 {
   "name": "sidepanel",
-  "version": "0.2.2",
+  "version": "0.2.3",
+  "description": "A Chrome Side Panel extension for opening, saving, and split-view browsing frequently used websites.",
   "private": true,
   "type": "module",
+  "author": "xxxily",
+  "license": "MIT",
+  "homepage": "https://github.com/xxxily/SidePanel#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xxxily/SidePanel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xxxily/SidePanel/issues"
+  },
+  "keywords": [
+    "chrome-extension",
+    "side-panel",
+    "sidepanel",
+    "browser-extension",
+    "manifest-v3"
+  ],
   "scripts": {
     "dev": "vite",
     "test": "node --test",

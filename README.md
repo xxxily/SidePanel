@@ -47,6 +47,21 @@ SidePanel 是一个面向高频浏览器用户的 Chrome 侧栏导航插件。�
 - **研究与资料整理用户**：把当前页面、链接和资料站放进分屏中对照阅读。
 - **喜欢轻量浏览器工作流的人**：不想装复杂工作台，只想让 Chrome 侧栏真正可用。
 
+## 安装使用
+
+SidePanel 目前还没有上架 Chrome 插件商店，暂时需要通过 GitHub Release 下载 zip 包，并用 Chrome 的开发者模式加载。
+
+1. 打开项目的 [Releases 页面](https://github.com/xxxily/SidePanel/releases)。
+2. 下载最新版本里的 `sidepanel-navigator-v*.zip` 文件。
+3. 将 zip 解压到一个固定目录，例如 `Downloads/SidePanel` 或你专门存放浏览器扩展的目录。
+4. 在 Chrome 地址栏打开 `chrome://extensions/`。
+5. 打开右上角的「开发者模式」。
+6. 点击「加载已解压的扩展程序」。
+7. 选择第 3 步解压出来的目录。
+8. 安装完成后，点击浏览器工具栏里的 SidePanel 图标即可打开侧栏。
+
+更新到新版本时，重新下载最新 Release zip，解压后在 `chrome://extensions/` 页面点击 SidePanel 卡片上的「重新加载」即可。
+
 ## 快速上手
 
 1. 点击 Chrome 工具栏里的 **SidePanel** 图标，打开侧栏。
