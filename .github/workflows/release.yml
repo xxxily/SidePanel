@@ -1,0 +1,133 @@
+name: Release extension
+
+on:
+  push:
+    paths:
+      - package.json
+      - public/manifest.json
+      - CHANGELOG.md
+      - .github/workflows/release.yml
+      - scripts/extract-changelog.mjs
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build zip and publish release
+    runs-on: ubuntu-latest
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 10
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Read release version
+        id: release
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          PACKAGE_VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          MANIFEST_VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('public/manifest.json', 'utf8')).version")
+          TAG="v$PACKAGE_VERSION"
+
+          if [[ "$PACKAGE_VERSION" != "$MANIFEST_VERSION" ]]; then
+            echo "package.json version ($PACKAGE_VERSION) must match public/manifest.json version ($MANIFEST_VERSION)." >&2
+            exit 1
+          fi
+
+          RELEASE_REQUIRED=false
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            RELEASE_REQUIRED=true
+          elif [[ -n "$BEFORE_SHA" && ! "$BEFORE_SHA" =~ ^0+$ ]]; then
+            PREVIOUS_PACKAGE_VERSION=$(git show "$BEFORE_SHA:package.json" 2>/dev/null | node -e "const fs = require('node:fs'); const input = fs.readFileSync(0, 'utf8'); process.stdout.write(JSON.parse(input).version ?? '');" || true)
+            PREVIOUS_MANIFEST_VERSION=$(git show "$BEFORE_SHA:public/manifest.json" 2>/dev/null | node -e "const fs = require('node:fs'); const input = fs.readFileSync(0, 'utf8'); process.stdout.write(JSON.parse(input).version ?? '');" || true)
+
+            if [[ "$PACKAGE_VERSION" != "$PREVIOUS_PACKAGE_VERSION" || "$MANIFEST_VERSION" != "$PREVIOUS_MANIFEST_VERSION" ]]; then
+              RELEASE_REQUIRED=true
+            fi
+          fi
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            RELEASE_REQUIRED=true
+          fi
+
+          {
+            echo "version=$PACKAGE_VERSION"
+            echo "tag=$TAG"
+            echo "zip_name=sidepanel-navigator-v$PACKAGE_VERSION.zip"
+            echo "release_required=$RELEASE_REQUIRED"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Stop when version did not change
+        if: steps.release.outputs.release_required != 'true'
+        run: echo "No version change detected; skipping release."
+
+      - name: Install dependencies
+        if: steps.release.outputs.release_required == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify and build
+        if: steps.release.outputs.release_required == 'true'
+        run: pnpm verify
+
+      - name: Prepare release notes
+        if: steps.release.outputs.release_required == 'true'
+        run: node scripts/extract-changelog.mjs "${{ steps.release.outputs.version }}" CHANGELOG.md release-notes.md
+
+      - name: Package extension
+        if: steps.release.outputs.release_required == 'true'
+        run: |
+          set -euo pipefail
+
+          test -f dist/manifest.json
+          DIST_VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('dist/manifest.json', 'utf8')).version")
+
+          if [[ "$DIST_VERSION" != "${{ steps.release.outputs.version }}" ]]; then
+            echo "dist/manifest.json version ($DIST_VERSION) must match release version (${{ steps.release.outputs.version }})." >&2
+            exit 1
+          fi
+
+          rm -f "${{ steps.release.outputs.zip_name }}"
+          (cd dist && zip -r "../${{ steps.release.outputs.zip_name }}" .)
+
+      - name: Publish GitHub Release
+        if: steps.release.outputs.release_required == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          ZIP_NAME: ${{ steps.release.outputs.zip_name }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP_NAME" --clobber
+            gh release edit "$TAG" --title "SidePanel Navigator $VERSION" --notes-file release-notes.md
+          else
+            gh release create "$TAG" "$ZIP_NAME" --target "$GITHUB_SHA" --title "SidePanel Navigator $VERSION" --notes-file release-notes.md
+          fi

@@ -92,6 +92,8 @@ SidePanel Navigator 适合以下场景：
 │  ├─ main.js                      # Vue 启动入口
 │  ├─ main.css                     # 样式
 │  └─ url-utils.js                 # URL 规范化与权限匹配工具
+├─ scripts/
+│  └─ extract-changelog.mjs        # GitHub Release 说明抽取脚本
 ├─ test/
 │  ├─ manifest.test.js             # Manifest 配置校验
 │  └─ url-utils.test.js            # URL 逻辑测试
@@ -131,6 +133,18 @@ pnpm verify
 ```
 
 `pnpm verify` 会先跑 Node 测试，再执行生产构建。
+
+### 发布 Release
+
+仓库包含 GitHub Actions 发布流程：当默认分支上的 `package.json` 或 `public/manifest.json` 版本号发生变化时，会自动执行测试、构建，并把 `dist/` 目录打包为 `sidepanel-navigator-v{version}.zip` 发布到 GitHub Release。完整步骤见 [RELEASE.md](./RELEASE.md)。
+
+发版前需要同步完成：
+
+1. 将 `package.json` 和 `public/manifest.json` 的 `version` 修改为同一个版本号。
+2. 在 `CHANGELOG.md` 顶部新增对应版本段落，例如 `## 0.3.0 - 2026-06-06`。
+3. 将变更推送到默认分支，等待 GitHub Actions 发布 Release。
+
+如果两个版本文件不一致，或 `CHANGELOG.md` 缺少当前版本说明，发布流程会失败，避免产生无法追溯更新内容的 Release。
 
 ### 在 Chrome 中加载
 
