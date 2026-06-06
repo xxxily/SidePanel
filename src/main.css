@@ -65,20 +65,25 @@ body {
   align-items: center;
   gap: 8px;
   height: 40px;
+  min-width: 0;
+  overflow: hidden;
   padding: 4px 8px;
   border-bottom: 1px solid var(--line);
 }
 
 .quick-menu {
   width: 100%;
+  min-width: 0;
   height: 100%;
   display: flex;
   gap: 8px;
   align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior-x: contain;
   padding-bottom: 0;
   scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .manage-toggle,

@@ -244,7 +244,11 @@ const removeSite = (index) => {
 const handleMenuWheel = (event) => {
   const menu = event.currentTarget;
   if (!(menu instanceof HTMLElement)) return;
-  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+
+  const canScrollHorizontally = menu.scrollWidth > menu.clientWidth;
+  if (!canScrollHorizontally || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+
+  event.preventDefault();
   menu.scrollLeft += event.deltaY;
 };
 
@@ -296,7 +300,7 @@ onMounted(async () => {
     </section>
 
     <nav class="right-sidebar" :aria-label="t('ui.quickSidebar')">
-      <div class="quick-menu" role="tablist" :aria-label="t('ui.quickSites')" @wheel.prevent="handleMenuWheel">
+      <div class="quick-menu" role="tablist" :aria-label="t('ui.quickSites')" @wheel="handleMenuWheel">
         <button
           v-for="(site, index) in sites"
           :key="`${site.name}-${index}`"
