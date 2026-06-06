@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SidePanel",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Open a navigation homepage in Chrome Side Panel and browse selected sites inside it.",
   "permissions": [
     "sidePanel",
