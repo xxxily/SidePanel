@@ -3,5 +3,4 @@ dist/
 .vite/
 .DS_Store
 *.log
-pnpm-lock.yaml
 .omx/

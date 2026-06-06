@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { createSiteFromUrl, getOriginPattern, normalizeHttpUrl } from './url-utils.js';
 
 const { t } = useI18n();
 
@@ -8,30 +9,41 @@ const DEFAULT_SITES = [
   { name: 'ChatGPT', icon: '🤖', url: 'https://chatgpt.com' },
   { name: '豆包', icon: '🫘', url: 'https://www.doubao.com' },
   { name: 'Kimi', icon: '🌙', url: 'https://kimi.moonshot.cn' }
-];
+].map((site) => createSiteFromUrl(site.url, site.name, site.icon));
 
 const STORAGE_KEY = 'custom_sites_v1';
+const MAX_OPEN_FRAMES = 6;
 
 const IMAGE_ICON_RE = /^https?:\/\/\S+$/i;
 
-const normalizeUrl = (value) => {
-  const raw = value.trim();
-  if (!raw) return null;
-  if (/^https?:\/\//i.test(raw)) return raw;
-  return `https://${raw}`;
+const getChromeApi = () => globalThis.chrome;
+
+const normalizeSites = (value) => {
+  if (!Array.isArray(value)) return DEFAULT_SITES;
+
+  const normalized = value
+    .map((site) => createSiteFromUrl(site?.url, site?.name, site?.icon))
+    .filter(Boolean);
+
+  return normalized.length ? normalized : DEFAULT_SITES;
 };
 
 const loadSites = () => {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || DEFAULT_SITES;
+    return normalizeSites(JSON.parse(localStorage.getItem(STORAGE_KEY)));
   } catch {
     return DEFAULT_SITES;
   }
 };
 
 const sites = ref(loadSites());
-const activeUrl = ref(normalizeUrl(sites.value[0]?.url || 'https://example.com'));
-const openedUrls = ref(activeUrl.value ? [activeUrl.value] : []);
+const activeUrl = ref(normalizeHttpUrl(sites.value[0]?.url || ''));
+const openedFrames = ref(activeUrl.value ? [{
+  url: activeUrl.value,
+  title: sites.value[0]?.name || activeUrl.value,
+  temporary: false,
+  lastActiveAt: Date.now()
+}] : []);
 const isManageOpen = ref(false);
 const editingIndex = ref(-1);
 
@@ -44,55 +56,144 @@ const saveSites = () => {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(sites.value));
 };
 
+const requestHostAccess = async (url) => {
+  const origin = getOriginPattern(url);
+  const permissions = getChromeApi()?.permissions;
+  if (!origin || !permissions?.request) return false;
 
-const consumePendingAddSite = async () => {
-  if (!chrome?.storage?.local) return;
-
-  const { pendingAddSite } = await chrome.storage.local.get('pendingAddSite');
-  if (!pendingAddSite) return;
-
-  await chrome.storage.local.remove('pendingAddSite');
-
-  const url = normalizeUrl(pendingAddSite.url || '');
-  if (!url) return;
-
-  const exists = sites.value.some((site) => normalizeUrl(site.url) === url);
-  if (exists) return;
-
-  sites.value.push({
-    name: (pendingAddSite.name || url).trim(),
-    icon: (pendingAddSite.icon || '🌐').trim() || '🌐',
-    url
-  });
-  saveSites();
-};
-
-const frameUrl = computed(() => activeUrl.value || 'https://example.com');
-
-const isSiteActive = (siteUrl) => {
-  const normalized = normalizeUrl(siteUrl);
-  if (!normalized || !activeUrl.value) return false;
   try {
-    const current = new URL(activeUrl.value).toString();
-    const target = new URL(normalized).toString();
-    return current.startsWith(target);
+    return await permissions.request({ origins: [origin] });
   } catch {
     return false;
   }
 };
 
-const openInFrame = (url) => {
-  const normalized = normalizeUrl(url);
-  if (!normalized) return;
-  try {
-    const resolvedUrl = new URL(normalized).toString();
-    activeUrl.value = resolvedUrl;
-    if (!openedUrls.value.includes(resolvedUrl)) {
-      openedUrls.value.push(resolvedUrl);
-    }
-  } catch {
+const trimOpenedFrames = () => {
+  if (openedFrames.value.length <= MAX_OPEN_FRAMES) return;
+
+  const removable = openedFrames.value
+    .filter((frame) => frame.url !== activeUrl.value)
+    .sort((a, b) => {
+      if (a.temporary !== b.temporary) return a.temporary ? -1 : 1;
+      return a.lastActiveAt - b.lastActiveAt;
+    })[0];
+
+  if (!removable) return;
+  openedFrames.value = openedFrames.value.filter((frame) => frame.url !== removable.url);
+};
+
+const openFrame = (url, metadata = {}) => {
+  const site = createSiteFromUrl(url, metadata.title || metadata.name, metadata.icon);
+  if (!site) {
     alert(t('ui.invalidUrl'));
+    return null;
   }
+
+  const now = Date.now();
+  const existing = openedFrames.value.find((frame) => frame.url === site.url);
+  if (existing) {
+    existing.title = metadata.title || metadata.name || existing.title || site.name;
+    existing.temporary = Boolean(metadata.temporary ?? existing.temporary);
+    existing.lastActiveAt = now;
+  } else {
+    openedFrames.value.push({
+      url: site.url,
+      title: metadata.title || metadata.name || site.name,
+      temporary: Boolean(metadata.temporary),
+      lastActiveAt: now
+    });
+  }
+
+  activeUrl.value = site.url;
+  trimOpenedFrames();
+  return site.url;
+};
+
+const closeFrame = (url) => {
+  const normalized = normalizeHttpUrl(url);
+  if (!normalized) return;
+
+  const closingActive = normalized === activeUrl.value;
+  openedFrames.value = openedFrames.value.filter((frame) => frame.url !== normalized);
+
+  if (!closingActive) return;
+
+  const next = openedFrames.value
+    .slice()
+    .sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0];
+
+  if (next) {
+    activeUrl.value = next.url;
+    next.lastActiveAt = Date.now();
+    return;
+  }
+
+  activeUrl.value = null;
+};
+
+const consumePendingAddSite = async () => {
+  const storage = getChromeApi()?.storage?.local;
+  if (!storage) return;
+
+  const { pendingAddSite } = await storage.get('pendingAddSite');
+  if (!pendingAddSite) return;
+
+  await storage.remove('pendingAddSite');
+
+  const site = createSiteFromUrl(pendingAddSite.url, pendingAddSite.name, pendingAddSite.icon);
+  if (!site) return;
+
+  const exists = sites.value.some((item) => item.url === site.url);
+  if (exists) return;
+
+  sites.value.push(site);
+  saveSites();
+};
+
+const consumePendingOpenSite = async () => {
+  const storage = getChromeApi()?.storage?.local;
+  if (!storage) return;
+
+  const { pendingOpenSite } = await storage.get('pendingOpenSite');
+  if (!pendingOpenSite) return;
+
+  await storage.remove('pendingOpenSite');
+
+  const site = createSiteFromUrl(pendingOpenSite.url, pendingOpenSite.name, pendingOpenSite.icon);
+  if (!site) return;
+
+  openFrame(site.url, {
+    title: site.name,
+    icon: site.icon,
+    temporary: true
+  });
+};
+
+const frameUrl = computed(() => activeUrl.value);
+const shouldShowOpenTabs = computed(() => (
+  openedFrames.value.length > 1 || openedFrames.value.some((frame) => frame.temporary)
+));
+
+const isSiteActive = (siteUrl) => {
+  const normalized = normalizeHttpUrl(siteUrl);
+  if (!normalized || !activeUrl.value) return false;
+  try {
+    const current = new URL(activeUrl.value).toString();
+    const target = new URL(normalized).toString();
+    return current === target || current.startsWith(target);
+  } catch {
+    return false;
+  }
+};
+
+const openInFrame = async (site) => {
+  const url = typeof site === 'string' ? site : site?.url;
+  await requestHostAccess(url);
+  openFrame(url, {
+    title: typeof site === 'string' ? '' : site?.name,
+    icon: typeof site === 'string' ? '' : site?.icon,
+    temporary: false
+  });
 };
 
 const resetForm = () => {
@@ -107,13 +208,15 @@ const startEdit = (index) => {
 };
 
 const upsertSite = () => {
-  const site = {
-    name: form.value.name.trim(),
-    icon: form.value.icon.trim(),
-    url: normalizeUrl(form.value.url)
-  };
+  const site = createSiteFromUrl(form.value.url, form.value.name, form.value.icon);
 
-  if (!site.name || !site.icon || !site.url) return;
+  if (!site?.name || !site.icon || !site.url) {
+    alert(t('ui.invalidUrl'));
+    return;
+  }
+
+  const duplicateIndex = sites.value.findIndex((item) => item.url === site.url);
+  if (duplicateIndex >= 0 && duplicateIndex !== editingIndex.value) return;
 
   if (editingIndex.value >= 0) {
     sites.value[editingIndex.value] = site;
@@ -127,12 +230,13 @@ const upsertSite = () => {
 
 const removeSite = (index) => {
   const removed = sites.value.splice(index, 1)[0];
-  const removedUrl = normalizeUrl(removed.url);
+  const removedUrl = normalizeHttpUrl(removed.url);
   if (removedUrl) {
-    openedUrls.value = openedUrls.value.filter((url) => url !== removedUrl);
+    closeFrame(removedUrl);
   }
-  if (removedUrl === activeUrl.value) {
-    openInFrame(sites.value[0]?.url || 'https://example.com');
+
+  if (!activeUrl.value && sites.value[0]) {
+    openFrame(sites.value[0].url, { title: sites.value[0].name, icon: sites.value[0].icon });
   }
   saveSites();
 };
@@ -159,12 +263,15 @@ const onDrop = (targetIndex) => {
 
 onMounted(async () => {
   await consumePendingAddSite();
+  await consumePendingOpenSite();
 
-  if (!chrome?.storage?.onChanged) return;
+  const chromeApi = getChromeApi();
+  if (!chromeApi?.storage?.onChanged) return;
 
-  chrome.storage.onChanged.addListener(async (changes, areaName) => {
-    if (areaName !== 'local' || !changes.pendingAddSite) return;
-    await consumePendingAddSite();
+  chromeApi.storage.onChanged.addListener(async (changes, areaName) => {
+    if (areaName !== 'local') return;
+    if (changes.pendingAddSite) await consumePendingAddSite();
+    if (changes.pendingOpenSite) await consumePendingOpenSite();
   });
 });
 </script>
@@ -173,16 +280,19 @@ onMounted(async () => {
   <main class="layout">
     <section class="viewer" :aria-label="t('ui.viewerArea')">
       <iframe
-        v-for="url in openedUrls"
+        v-for="frame in openedFrames"
         class="site-frame"
-        :key="url"
-        :title="t('ui.frameTitle')"
-        :src="url"
-        v-show="url === frameUrl"
+        :key="frame.url"
+        :title="frame.title || t('ui.frameTitle')"
+        :src="frame.url"
+        v-show="frame.url === frameUrl"
         sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads allow-popups-to-escape-sandbox"
         referrerpolicy="no-referrer-when-downgrade"
         allow="clipboard-read; clipboard-write"
       ></iframe>
+      <div v-if="!openedFrames.length" class="empty-view">
+        {{ t('ui.noPageOpen') }}
+      </div>
     </section>
 
     <nav class="right-sidebar" :aria-label="t('ui.quickSidebar')">
@@ -196,7 +306,7 @@ onMounted(async () => {
           role="tab"
           type="button"
           draggable="true"
-          @click="openInFrame(site.url)"
+          @click="openInFrame(site)"
           @dragstart="onDragStart(index)"
           @dragover.prevent
           @drop="onDrop(index)"
@@ -215,6 +325,30 @@ onMounted(async () => {
       <button class="manage-toggle" :title="t('ui.manageNav')" @click="isManageOpen = !isManageOpen">⚙️</button>
     </nav>
 
+    <div v-if="shouldShowOpenTabs" class="open-tabs" :aria-label="t('ui.openPages')">
+      <button
+        v-for="frame in openedFrames"
+        :key="frame.url"
+        class="open-tab"
+        :class="{ 'is-active': frame.url === frameUrl, 'is-temporary': frame.temporary }"
+        :title="frame.title || frame.url"
+        type="button"
+        @click="openFrame(frame.url, { title: frame.title, temporary: frame.temporary })"
+      >
+        <span class="open-tab-title">{{ frame.title || frame.url }}</span>
+        <span v-if="frame.temporary" class="temporary-dot" aria-hidden="true"></span>
+        <span
+          class="close-tab"
+          role="button"
+          tabindex="0"
+          :title="t('ui.closePage')"
+          @click.stop="closeFrame(frame.url)"
+          @keydown.enter.stop.prevent="closeFrame(frame.url)"
+          @keydown.space.stop.prevent="closeFrame(frame.url)"
+        >×</span>
+      </button>
+    </div>
+
     <section class="manage-panel" :aria-label="t('ui.managePanel')" v-show="isManageOpen">
       <h2>{{ t('ui.manageQuickSites') }}</h2>
       <form class="site-form" @submit.prevent="upsertSite">
@@ -225,7 +359,7 @@ onMounted(async () => {
           :placeholder="t('ui.inputIcon')"
           required
         />
-        <input v-model="form.url" type="url" :placeholder="t('ui.inputUrl')" required />
+        <input v-model="form.url" type="text" inputmode="url" :placeholder="t('ui.inputUrl')" required />
         <button type="submit">{{ editingIndex >= 0 ? t('ui.save') : t('ui.add') }}</button>
         <button v-if="editingIndex >= 0" type="button" @click="resetForm">{{ t('ui.cancel') }}</button>
       </form>

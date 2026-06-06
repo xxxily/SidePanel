@@ -18,6 +18,9 @@ const messages = {
       cancel: '取消编辑',
       edit: '编辑',
       remove: '删除',
+      openPages: '已打开页面',
+      closePage: '关闭页面',
+      noPageOpen: '暂无打开页面',
       iconAlt: '{name} 图标',
       invalidUrl: '请输入正确的网址，例如 https://example.com'
     }
@@ -39,6 +42,9 @@ const messages = {
       cancel: 'Cancel',
       edit: 'Edit',
       remove: 'Delete',
+      openPages: 'Open pages',
+      closePage: 'Close page',
+      noPageOpen: 'No page open',
       iconAlt: '{name} icon',
       invalidUrl: 'Please enter a valid URL, e.g. https://example.com'
     }

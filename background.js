@@ -1,13 +1,29 @@
+import { createSiteFromUrl, getOriginPattern } from './src/url-utils.js';
 
-const CONTEXT_MENU_ID = 'add-to-sidebar';
-const CONTEXT_MENU_TITLE = {
-  zh: '加入侧边栏',
-  en: 'Add to Sidebar'
+const CONTEXT_MENU_IDS = {
+  open: 'open-in-sidebar',
+  add: 'add-to-sidebar'
 };
 
-const getContextMenuTitle = () => {
+const CONTEXT_MENU_TITLE = {
+  open: {
+    zh: '在侧栏打开',
+    en: 'Open in Sidebar'
+  },
+  add: {
+    zh: '加入侧边栏',
+    en: 'Add to Sidebar'
+  }
+};
+
+const getLocale = () => {
   const locale = (chrome.i18n.getUILanguage() || '').toLowerCase();
-  return locale.startsWith('zh') ? CONTEXT_MENU_TITLE.zh : CONTEXT_MENU_TITLE.en;
+  return locale.startsWith('zh') ? 'zh' : 'en';
+};
+
+const getContextMenuTitle = (key) => {
+  const locale = getLocale();
+  return CONTEXT_MENU_TITLE[key][locale];
 };
 
 const normalizeFavicon = (favIconUrl) => {
@@ -17,15 +33,7 @@ const normalizeFavicon = (favIconUrl) => {
 
 const DYNAMIC_RULE_IDS = [1, 2];
 
-chrome.runtime.onInstalled.addListener(async () => {
-  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-
-  chrome.contextMenus.create({
-    id: CONTEXT_MENU_ID,
-    title: getContextMenuTitle(),
-    contexts: ['page']
-  });
-
+const ensureDynamicRules = async () => {
   await chrome.declarativeNetRequest.updateDynamicRules({
     removeRuleIds: DYNAMIC_RULE_IDS,
     addRules: [
@@ -71,21 +79,85 @@ chrome.runtime.onInstalled.addListener(async () => {
       }
     ]
   });
+};
+
+const createContextMenus = async () => {
+  await chrome.contextMenus.removeAll();
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_IDS.open,
+    title: getContextMenuTitle('open'),
+    contexts: ['page', 'link']
+  });
+
+  chrome.contextMenus.create({
+    id: CONTEXT_MENU_IDS.add,
+    title: getContextMenuTitle('add'),
+    contexts: ['page', 'link']
+  });
+};
+
+const requestHostAccess = async (url) => {
+  const origin = getOriginPattern(url);
+  if (!origin || !chrome.permissions?.request) return false;
+
+  try {
+    return await chrome.permissions.request({ origins: [origin] });
+  } catch {
+    return false;
+  }
+};
+
+const getMenuTargetSite = (info, tab) => {
+  const rawUrl = info.linkUrl || tab?.url || '';
+  const name = info.linkUrl ? '' : tab?.title || '';
+  const icon = info.linkUrl ? '🌐' : normalizeFavicon(tab?.favIconUrl);
+  return createSiteFromUrl(rawUrl, name, icon);
+};
+
+const openSidePanelForTab = (tab) => {
+  if (typeof tab?.id === 'number') {
+    chrome.sidePanel.open({ tabId: tab.id });
+  }
+};
+
+chrome.runtime.onInstalled.addListener(async () => {
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  await createContextMenus();
+  await ensureDynamicRules();
+});
+
+chrome.runtime.onStartup.addListener(async () => {
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+  await createContextMenus();
+  await ensureDynamicRules();
 });
 
 
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId !== CONTEXT_MENU_ID || !tab?.url) return;
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+  if (!Object.values(CONTEXT_MENU_IDS).includes(info.menuItemId)) return;
 
-  if (typeof tab.id === 'number') {
-    chrome.sidePanel.open({ tabId: tab.id });
+  const site = getMenuTargetSite(info, tab);
+  if (!site) return;
+
+  openSidePanelForTab(tab);
+  await requestHostAccess(site.url);
+
+  if (info.menuItemId === CONTEXT_MENU_IDS.open) {
+    await chrome.storage.local.set({
+      pendingOpenSite: {
+        ...site,
+        temporary: true,
+        requestedAt: Date.now()
+      }
+    });
+    return;
   }
 
-  chrome.storage.local.set({
+  await chrome.storage.local.set({
     pendingAddSite: {
-      name: tab.title || tab.url,
-      url: tab.url,
-      icon: normalizeFavicon(tab.favIconUrl)
+      ...site,
+      requestedAt: Date.now()
     }
   });
 });

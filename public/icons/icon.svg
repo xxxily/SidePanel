@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="SidePanel Navigator">
+  <defs>
+    <linearGradient id="panel-bg" x1="20" y1="12" x2="108" y2="116" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="panel-shine" x1="38" y1="24" x2="92" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".96"/>
+      <stop offset="1" stop-color="#dbeafe" stop-opacity=".88"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="#111827"/>
+  <rect x="13" y="13" width="102" height="102" rx="23" fill="url(#panel-bg)"/>
+  <rect x="29" y="27" width="68" height="74" rx="10" fill="url(#panel-shine)"/>
+  <rect x="39" y="39" width="28" height="7" rx="3.5" fill="#2563eb"/>
+  <rect x="39" y="54" width="38" height="7" rx="3.5" fill="#64748b"/>
+  <rect x="39" y="69" width="31" height="7" rx="3.5" fill="#64748b"/>
+  <rect x="82" y="27" width="16" height="74" rx="8" fill="#0f172a" opacity=".18"/>
+  <circle cx="90" cy="44" r="4.5" fill="#ffffff"/>
+  <circle cx="90" cy="64" r="4.5" fill="#ffffff"/>
+  <circle cx="90" cy="84" r="4.5" fill="#ffffff"/>
+</svg>
