@@ -5,6 +5,7 @@
   "description": "Open a navigation homepage in Chrome Side Panel and browse selected sites inside it.",
   "permissions": [
     "sidePanel",
+    "activeTab",
     "declarativeNetRequest",
     "declarativeNetRequestWithHostAccess",
     "contextMenus",
@@ -35,5 +36,21 @@
   },
   "side_panel": {
     "default_path": "sidepanel.html"
+  },
+  "commands": {
+    "open-current-page-in-sidebar": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "MacCtrl+Shift+S"
+      },
+      "description": "Open the current page in SidePanel"
+    },
+    "add-current-page-to-sidebar": {
+      "suggested_key": {
+        "default": "Alt+Shift+A",
+        "mac": "MacCtrl+Shift+A"
+      },
+      "description": "Add the current page to SidePanel"
+    }
   }
 }

@@ -5,6 +5,11 @@ const CONTEXT_MENU_IDS = {
   add: 'add-to-sidebar'
 };
 
+const COMMAND_IDS = {
+  open: 'open-current-page-in-sidebar',
+  add: 'add-current-page-to-sidebar'
+};
+
 const CONTEXT_MENU_TITLE = {
   open: {
     zh: '在侧栏打开',
@@ -115,10 +120,52 @@ const getMenuTargetSite = (info, tab) => {
   return createSiteFromUrl(rawUrl, name, icon);
 };
 
+const getTabTargetSite = (tab) => createSiteFromUrl(
+  tab?.url || '',
+  tab?.title || '',
+  normalizeFavicon(tab?.favIconUrl)
+);
+
+const getActiveTab = async () => {
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    currentWindow: true
+  });
+  return tab;
+};
+
 const openSidePanelForTab = (tab) => {
   if (typeof tab?.id === 'number') {
     chrome.sidePanel.open({ tabId: tab.id });
   }
+};
+
+const queueSiteAction = async (action, site) => {
+  if (action === 'open') {
+    await chrome.storage.local.set({
+      pendingOpenSite: {
+        ...site,
+        temporary: true,
+        requestedAt: Date.now()
+      }
+    });
+    return;
+  }
+
+  await chrome.storage.local.set({
+    pendingAddSite: {
+      ...site,
+      requestedAt: Date.now()
+    }
+  });
+};
+
+const handleSiteAction = async (action, site, tab) => {
+  if (!site) return;
+
+  openSidePanelForTab(tab);
+  await requestHostAccess(site.url);
+  await queueSiteAction(action, site);
 };
 
 chrome.runtime.onInstalled.addListener(async () => {
@@ -138,26 +185,16 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (!Object.values(CONTEXT_MENU_IDS).includes(info.menuItemId)) return;
 
   const site = getMenuTargetSite(info, tab);
-  if (!site) return;
+  const action = info.menuItemId === CONTEXT_MENU_IDS.open ? 'open' : 'add';
+  await handleSiteAction(action, site, tab);
+});
 
-  openSidePanelForTab(tab);
-  await requestHostAccess(site.url);
+chrome.commands.onCommand.addListener(async (command, commandTab) => {
+  const action = Object.entries(COMMAND_IDS)
+    .find(([, commandId]) => commandId === command)?.[0];
+  if (!action) return;
 
-  if (info.menuItemId === CONTEXT_MENU_IDS.open) {
-    await chrome.storage.local.set({
-      pendingOpenSite: {
-        ...site,
-        temporary: true,
-        requestedAt: Date.now()
-      }
-    });
-    return;
-  }
-
-  await chrome.storage.local.set({
-    pendingAddSite: {
-      ...site,
-      requestedAt: Date.now()
-    }
-  });
+  const tab = commandTab || await getActiveTab();
+  const site = getTabTargetSite(tab);
+  await handleSiteAction(action, site, tab);
 });
