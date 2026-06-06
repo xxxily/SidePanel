@@ -1,6 +1,6 @@
 # Release Guide
 
-本文档固化 SidePanel Navigator 的版本发布流程。目标是让每次版本更新后，GitHub Actions 自动构建 Chrome 扩展，并把可导入浏览器的 zip 包发布到 GitHub Release。
+本文档固化 SidePanel 的版本发布流程。目标是让每次版本更新后，GitHub Actions 自动构建 Chrome 扩展，并把可导入浏览器的 zip 包发布到 GitHub Release。
 
 ## 发布产物
 

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SidePanel Navigator",
+  "name": "SidePanel",
   "version": "0.2.1",
   "description": "Open a navigation homepage in Chrome Side Panel and browse selected sites inside it.",
   "permissions": [
@@ -21,7 +21,7 @@
     "128": "icons/icon-128.png"
   },
   "action": {
-    "default_title": "Open SidePanel Navigator",
+    "default_title": "Open SidePanel",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",

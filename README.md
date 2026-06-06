@@ -1,11 +1,11 @@
-# SidePanel Navigator (Chrome Extension)
+# SidePanel (Chrome Extension)
 
 一个基于 **Vue 3 + Vite 8 + Manifest V3** 的 Chrome Side Panel 导航插件。
 它把常用网站聚合到浏览器侧边栏中，支持像“标签页”一样快速切换，并提供可视化管理能力。
 
 ## 项目定位
 
-SidePanel Navigator 适合以下场景：
+SidePanel 适合以下场景：
 
 - 希望在浏览器右侧固定一个“工作台”，快速访问 AI、文档、代码托管、设计等站点。
 - 不想频繁切换浏览器标签页，希望把常用网页收拢到侧边栏统一操作。
