@@ -297,6 +297,23 @@ body {
   background: #eceff4;
 }
 
+.site-tooltip {
+  position: fixed;
+  z-index: 120;
+  max-width: min(240px, calc(100vw - 24px));
+  padding: 5px 8px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.18);
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
 .tab-menu,
 .split-controls {
   position: relative;
@@ -468,6 +485,18 @@ body {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
+}
+
+.tab-menu.is-dismissed::after,
+.split-controls.is-dismissed::after {
+  display: none;
+}
+
+.tab-menu.is-dismissed .tab-dropdown,
+.split-controls.is-dismissed .split-dropdown {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
 }
 
 .tab-toolbar {

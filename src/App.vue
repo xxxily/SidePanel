@@ -156,6 +156,9 @@ const paneHistories = ref(Object.fromEntries(
 const paneFrameCaches = ref(Object.fromEntries(PANE_IDS.map((id) => [id, []])));
 const isManageOpen = ref(false);
 const editingIndex = ref(-1);
+const isTabMenuDismissed = ref(false);
+const isSplitMenuDismissed = ref(false);
+const siteTooltip = ref(null);
 
 const form = ref({ name: '', icon: '', url: '' });
 const draggedIndex = ref(-1);
@@ -392,6 +395,27 @@ const setSplitMode = (mode) => {
   }
 };
 
+const dismissTabMenu = () => {
+  isTabMenuDismissed.value = true;
+};
+
+const resetTabMenuDismissed = () => {
+  isTabMenuDismissed.value = false;
+};
+
+const dismissSplitMenu = () => {
+  isSplitMenuDismissed.value = true;
+};
+
+const resetSplitMenuDismissed = () => {
+  isSplitMenuDismissed.value = false;
+};
+
+const chooseSplitMode = (mode) => {
+  setSplitMode(mode);
+  dismissSplitMenu();
+};
+
 const openFrame = (url, metadata = {}) => {
   const site = createSiteFromUrl(
     url,
@@ -537,6 +561,28 @@ const isSiteActive = (siteUrl) => {
   }
 };
 
+const showSiteTooltip = (site, event) => {
+  const target = event.currentTarget;
+  if (!(target instanceof HTMLElement)) return;
+
+  const rect = target.getBoundingClientRect();
+  const viewportWidth = globalThis.innerWidth || document.documentElement.clientWidth || 0;
+  const left = Math.min(
+    Math.max(rect.left + rect.width / 2, 44),
+    Math.max(44, viewportWidth - 44)
+  );
+
+  siteTooltip.value = {
+    name: site.name,
+    left,
+    top: rect.bottom + 6
+  };
+};
+
+const hideSiteTooltip = () => {
+  siteTooltip.value = null;
+};
+
 const openInFrame = async (site) => {
   const url = typeof site === 'string' ? site : site?.url;
   await requestHostAccess(url);
@@ -547,6 +593,11 @@ const openInFrame = async (site) => {
   });
 };
 
+const selectSite = (site) => {
+  hideSiteTooltip();
+  openInFrame(site);
+};
+
 const openStoredFrame = (frame) => {
   openFrame(frame.url, {
     title: frame.title,
@@ -554,6 +605,7 @@ const openStoredFrame = (frame) => {
     temporary: frame.temporary,
     recordHistory: false
   });
+  dismissTabMenu();
 };
 
 const resetForm = () => {
@@ -611,6 +663,7 @@ const handleMenuWheel = (event) => {
 
   event.preventDefault();
   menu.scrollLeft += event.deltaY;
+  hideSiteTooltip();
 };
 
 const onDragStart = (index) => {
@@ -715,11 +768,15 @@ onMounted(async () => {
           :key="`${site.name}-${index}`"
           class="site-btn"
           :class="{ 'is-active': isSiteActive(site.url) }"
-          :title="site.name"
+          :aria-label="site.name"
           role="tab"
           type="button"
           draggable="true"
-          @click="openInFrame(site)"
+          @click="selectSite(site)"
+          @mouseenter="showSiteTooltip(site, $event)"
+          @focus="showSiteTooltip(site, $event)"
+          @mouseleave="hideSiteTooltip"
+          @blur="hideSiteTooltip"
           @dragstart="onDragStart(index)"
           @dragover.prevent
           @drop="onDrop(index)"
@@ -735,8 +792,23 @@ onMounted(async () => {
           <span v-else class="site-icon-text">{{ site.icon }}</span>
         </button>
       </div>
+      <div
+        v-if="siteTooltip"
+        class="site-tooltip"
+        :style="{ left: `${siteTooltip.left}px`, top: `${siteTooltip.top}px` }"
+        role="tooltip"
+      >
+        {{ siteTooltip.name }}
+      </div>
 
-      <div v-if="shouldShowTabMenu" class="tab-menu" :aria-label="t('ui.openPages')">
+      <div
+        v-if="shouldShowTabMenu"
+        class="tab-menu"
+        :class="{ 'is-dismissed': isTabMenuDismissed }"
+        :aria-label="t('ui.openPages')"
+        @mouseenter="resetTabMenuDismissed"
+        @focusin="resetTabMenuDismissed"
+      >
         <button
           class="tab-menu-trigger"
           type="button"
@@ -814,7 +886,13 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="split-controls" :aria-label="t('ui.splitLayouts')">
+      <div
+        class="split-controls"
+        :class="{ 'is-dismissed': isSplitMenuDismissed }"
+        :aria-label="t('ui.splitLayouts')"
+        @mouseenter="resetSplitMenuDismissed"
+        @focusin="resetSplitMenuDismissed"
+      >
         <button
           class="split-trigger"
           :class="`is-${splitMode}`"
@@ -834,7 +912,7 @@ onMounted(async () => {
             role="menuitem"
             :title="getLayoutLabel(layout)"
             :aria-label="getLayoutLabel(layout)"
-            @click="setSplitMode(layout.id)"
+            @click="chooseSplitMode(layout.id)"
           >
             <span class="layout-icon" aria-hidden="true"></span>
             <span class="split-label">{{ getLayoutLabel(layout) }}</span>
