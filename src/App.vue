@@ -13,6 +13,13 @@ const DEFAULT_SITES = [
 
 const STORAGE_KEY = 'custom_sites_v1';
 const MAX_OPEN_FRAMES = 6;
+const PANE_IDS = ['pane-1', 'pane-2', 'pane-3', 'pane-4'];
+const SPLIT_LAYOUTS = [
+  { id: 'single', labelKey: 'layoutSingle', paneCount: 1 },
+  { id: 'columns', labelKey: 'layoutColumns', paneCount: 2 },
+  { id: 'rows', labelKey: 'layoutRows', paneCount: 2 },
+  { id: 'grid', labelKey: 'layoutGrid', paneCount: 4 }
+];
 
 const IMAGE_ICON_RE = /^https?:\/\/\S+$/i;
 
@@ -37,10 +44,16 @@ const loadSites = () => {
 };
 
 const sites = ref(loadSites());
-const activeUrl = ref(normalizeHttpUrl(sites.value[0]?.url || ''));
-const openedFrames = ref(activeUrl.value ? [{
-  url: activeUrl.value,
-  title: sites.value[0]?.name || activeUrl.value,
+const initialUrl = normalizeHttpUrl(sites.value[0]?.url || '');
+const splitMode = ref('single');
+const panes = ref(PANE_IDS.map((id, index) => ({
+  id,
+  url: index === 0 ? initialUrl : null
+})));
+const activePaneId = ref(PANE_IDS[0]);
+const openedFrames = ref(initialUrl ? [{
+  url: initialUrl,
+  title: sites.value[0]?.name || initialUrl,
   temporary: false,
   lastActiveAt: Date.now()
 }] : []);
@@ -49,6 +62,17 @@ const editingIndex = ref(-1);
 
 const form = ref({ name: '', icon: '', url: '' });
 const draggedIndex = ref(-1);
+
+const activeLayout = computed(() => (
+  SPLIT_LAYOUTS.find((layout) => layout.id === splitMode.value) || SPLIT_LAYOUTS[0]
+));
+const visiblePaneCount = computed(() => activeLayout.value.paneCount);
+const visiblePanes = computed(() => panes.value.slice(0, visiblePaneCount.value));
+const activePane = computed(() => (
+  visiblePanes.value.find((pane) => pane.id === activePaneId.value) || visiblePanes.value[0]
+));
+const activeUrl = computed(() => activePane.value?.url || null);
+const visiblePaneUrls = computed(() => visiblePanes.value.map((pane) => pane.url).filter(Boolean));
 
 const isImageIcon = (icon) => IMAGE_ICON_RE.test((icon || '').trim());
 
@@ -72,7 +96,7 @@ const trimOpenedFrames = () => {
   if (openedFrames.value.length <= MAX_OPEN_FRAMES) return;
 
   const removable = openedFrames.value
-    .filter((frame) => frame.url !== activeUrl.value)
+    .filter((frame) => !visiblePaneUrls.value.includes(frame.url))
     .sort((a, b) => {
       if (a.temporary !== b.temporary) return a.temporary ? -1 : 1;
       return a.lastActiveAt - b.lastActiveAt;
@@ -80,6 +104,75 @@ const trimOpenedFrames = () => {
 
   if (!removable) return;
   openedFrames.value = openedFrames.value.filter((frame) => frame.url !== removable.url);
+};
+
+const setActivePane = (paneId) => {
+  if (!visiblePanes.value.some((pane) => pane.id === paneId)) return;
+  activePaneId.value = paneId;
+};
+
+const getActivePane = () => {
+  const pane = visiblePanes.value.find((item) => item.id === activePaneId.value);
+  if (pane) return pane;
+
+  const fallback = visiblePanes.value[0];
+  activePaneId.value = fallback?.id || PANE_IDS[0];
+  return fallback;
+};
+
+const getFrame = (url) => openedFrames.value.find((frame) => frame.url === url);
+
+const getPaneTitle = (pane) => {
+  if (!pane?.url) return t('ui.emptyPaneTitle');
+  return getFrame(pane.url)?.title || pane.url;
+};
+
+const clearPane = (paneId) => {
+  const pane = panes.value.find((item) => item.id === paneId);
+  if (!pane) return;
+  pane.url = null;
+  setActivePane(paneId);
+};
+
+const applySingleLayout = (urlToKeep = activeUrl.value || visiblePaneUrls.value[0] || null) => {
+  panes.value = panes.value.map((pane, index) => ({
+    ...pane,
+    url: index === 0 ? urlToKeep : pane.url
+  }));
+  activePaneId.value = PANE_IDS[0];
+};
+
+const setSplitMode = (mode) => {
+  const nextLayout = SPLIT_LAYOUTS.find((layout) => layout.id === mode);
+  if (!nextLayout) return;
+
+  const previousLayout = activeLayout.value;
+  const urlToKeep = activeUrl.value || visiblePaneUrls.value[0] || null;
+  splitMode.value = nextLayout.id;
+  if (nextLayout.id === 'single') {
+    applySingleLayout(urlToKeep);
+    return;
+  }
+
+  if (previousLayout.id === 'single') {
+    panes.value = panes.value.map((pane, index) => ({
+      ...pane,
+      url: index === 0 ? urlToKeep : null
+    }));
+    activePaneId.value = PANE_IDS[0];
+    return;
+  }
+
+  if (nextLayout.paneCount > previousLayout.paneCount) {
+    panes.value = panes.value.map((pane, index) => ({
+      ...pane,
+      url: index >= previousLayout.paneCount && index < nextLayout.paneCount ? null : pane.url
+    }));
+  }
+
+  if (!visiblePanes.value.some((pane) => pane.id === activePaneId.value)) {
+    activePaneId.value = PANE_IDS[0];
+  }
 };
 
 const openFrame = (url, metadata = {}) => {
@@ -104,7 +197,12 @@ const openFrame = (url, metadata = {}) => {
     });
   }
 
-  activeUrl.value = site.url;
+  const pane = getActivePane();
+  if (pane) {
+    pane.url = site.url;
+    activePaneId.value = pane.id;
+  }
+
   trimOpenedFrames();
   return site.url;
 };
@@ -113,22 +211,26 @@ const closeFrame = (url) => {
   const normalized = normalizeHttpUrl(url);
   if (!normalized) return;
 
-  const closingActive = normalized === activeUrl.value;
+  const wasVisibleInPane = panes.value.some((pane) => pane.url === normalized);
   openedFrames.value = openedFrames.value.filter((frame) => frame.url !== normalized);
+  panes.value = panes.value.map((pane) => (
+    pane.url === normalized ? { ...pane, url: null } : pane
+  ));
 
-  if (!closingActive) return;
+  if (splitMode.value !== 'single' || !wasVisibleInPane) return;
 
   const next = openedFrames.value
     .slice()
     .sort((a, b) => b.lastActiveAt - a.lastActiveAt)[0];
 
   if (next) {
-    activeUrl.value = next.url;
+    panes.value[0].url = next.url;
+    activePaneId.value = PANE_IDS[0];
     next.lastActiveAt = Date.now();
     return;
   }
 
-  activeUrl.value = null;
+  panes.value[0].url = null;
 };
 
 const consumePendingAddSite = async () => {
@@ -169,7 +271,6 @@ const consumePendingOpenSite = async () => {
   });
 };
 
-const frameUrl = computed(() => activeUrl.value);
 const shouldShowOpenTabs = computed(() => (
   openedFrames.value.length > 1 || openedFrames.value.some((frame) => frame.temporary)
 ));
@@ -235,7 +336,7 @@ const removeSite = (index) => {
     closeFrame(removedUrl);
   }
 
-  if (!activeUrl.value && sites.value[0]) {
+  if (splitMode.value === 'single' && !activeUrl.value && sites.value[0]) {
     openFrame(sites.value[0].url, { title: sites.value[0].name, icon: sites.value[0].icon });
   }
   saveSites();
@@ -265,6 +366,8 @@ const onDrop = (targetIndex) => {
   saveSites();
 };
 
+const getPaneNumber = (paneId) => PANE_IDS.indexOf(paneId) + 1;
+
 onMounted(async () => {
   await consumePendingAddSite();
   await consumePendingOpenSite();
@@ -282,20 +385,52 @@ onMounted(async () => {
 
 <template>
   <main class="layout">
-    <section class="viewer" :aria-label="t('ui.viewerArea')">
-      <iframe
-        v-for="frame in openedFrames"
-        class="site-frame"
-        :key="frame.url"
-        :title="frame.title || t('ui.frameTitle')"
-        :src="frame.url"
-        v-show="frame.url === frameUrl"
-        sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads allow-popups-to-escape-sandbox"
-        referrerpolicy="no-referrer-when-downgrade"
-        allow="clipboard-read; clipboard-write"
-      ></iframe>
-      <div v-if="!openedFrames.length" class="empty-view">
-        {{ t('ui.noPageOpen') }}
+    <section
+      class="viewer"
+      :class="`is-${splitMode}`"
+      :aria-label="t('ui.viewerArea')"
+    >
+      <div
+        v-for="pane in visiblePanes"
+        :key="pane.id"
+        class="viewer-pane"
+        :class="{ 'is-active': pane.id === activePaneId, 'is-empty': !pane.url }"
+        @click="setActivePane(pane.id)"
+      >
+        <div class="pane-toolbar">
+          <span class="pane-title" :title="getPaneTitle(pane)">
+            {{ getPaneTitle(pane) }}
+          </span>
+          <button
+            v-if="pane.url"
+            class="pane-clear"
+            type="button"
+            :title="t('ui.clearPane')"
+            :aria-label="t('ui.clearPane')"
+            @click.stop="clearPane(pane.id)"
+          >×</button>
+        </div>
+
+        <iframe
+          v-if="pane.url"
+          class="site-frame"
+          :key="`${pane.id}-${pane.url}`"
+          :title="getPaneTitle(pane) || t('ui.frameTitle')"
+          :src="pane.url"
+          sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals allow-downloads allow-popups-to-escape-sandbox"
+          referrerpolicy="no-referrer-when-downgrade"
+          allow="clipboard-read; clipboard-write"
+        ></iframe>
+
+        <button
+          v-else
+          class="empty-view"
+          type="button"
+          @click.stop="setActivePane(pane.id)"
+        >
+          <span>{{ t('ui.emptyPane', { number: getPaneNumber(pane.id) }) }}</span>
+          <small>{{ t('ui.emptyPaneHint') }}</small>
+        </button>
       </div>
     </section>
 
@@ -326,6 +461,20 @@ onMounted(async () => {
           <span v-else class="site-icon-text">{{ site.icon }}</span>
         </button>
       </div>
+      <div class="split-controls" :aria-label="t('ui.splitLayouts')">
+        <button
+          v-for="layout in SPLIT_LAYOUTS"
+          :key="layout.id"
+          class="split-btn"
+          :class="[`is-${layout.id}`, { 'is-active': splitMode === layout.id }]"
+          type="button"
+          :title="t(`ui.${layout.labelKey}`)"
+          :aria-label="t(`ui.${layout.labelKey}`)"
+          @click="setSplitMode(layout.id)"
+        >
+          <span class="layout-icon" aria-hidden="true"></span>
+        </button>
+      </div>
       <button class="manage-toggle" :title="t('ui.manageNav')" @click="isManageOpen = !isManageOpen">⚙️</button>
     </nav>
 
@@ -334,7 +483,7 @@ onMounted(async () => {
         v-for="frame in openedFrames"
         :key="frame.url"
         class="open-tab"
-        :class="{ 'is-active': frame.url === frameUrl, 'is-temporary': frame.temporary }"
+        :class="{ 'is-active': frame.url === activeUrl, 'is-visible': visiblePaneUrls.includes(frame.url), 'is-temporary': frame.temporary }"
         :title="frame.title || frame.url"
         type="button"
         @click="openFrame(frame.url, { title: frame.title, temporary: frame.temporary })"

@@ -21,6 +21,15 @@ const messages = {
       openPages: '已打开页面',
       closePage: '关闭页面',
       noPageOpen: '暂无打开页面',
+      splitLayouts: '分屏布局',
+      layoutSingle: '单屏',
+      layoutColumns: '左右分屏',
+      layoutRows: '上下分屏',
+      layoutGrid: '四宫格分屏',
+      clearPane: '清空当前分屏',
+      emptyPaneTitle: '空白分屏',
+      emptyPane: '分屏 {number}',
+      emptyPaneHint: '点击后再选择快捷网站',
       iconAlt: '{name} 图标',
       invalidUrl: '请输入正确的网址，例如 https://example.com'
     }
@@ -45,6 +54,15 @@ const messages = {
       openPages: 'Open pages',
       closePage: 'Close page',
       noPageOpen: 'No page open',
+      splitLayouts: 'Split layouts',
+      layoutSingle: 'Single pane',
+      layoutColumns: 'Side-by-side split',
+      layoutRows: 'Stacked split',
+      layoutGrid: 'Four-pane split',
+      clearPane: 'Clear current pane',
+      emptyPaneTitle: 'Empty pane',
+      emptyPane: 'Pane {number}',
+      emptyPaneHint: 'Select it, then choose a quick site',
       iconAlt: '{name} icon',
       invalidUrl: 'Please enter a valid URL, e.g. https://example.com'
     }
